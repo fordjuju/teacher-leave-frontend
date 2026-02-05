@@ -10,14 +10,14 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [error, setError] = useState('');
   const [reviewNotes, setReviewNotes] = useState('');
   const [selectedLeave, setSelectedLeave] = useState(null);
-  
-  // Report functionality states
+
   const [reportFilters, setReportFilters] = useState({
     department: 'all',
     status: 'all',
     startDate: '',
-    endDate: ''
+    endDate: '',
   });
+
   const [filteredLeaves, setFilteredLeaves] = useState([]);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
@@ -28,17 +28,12 @@ const AdminDashboard = ({ user, onLogout }) => {
     }
   }, [user]);
 
-  useEffect(() => {
-    // Apply filters when allLeaves or filters change
-    applyFilters();
-  }, [allLeaves, reportFilters]);
-
   const fetchPendingLeaves = async () => {
     setLoading(true);
     try {
       const response = await adminAPI.getPendingLeaves();
       setPendingLeaves(response.data.leaves || []);
-    } catch (err) {
+    } catch {
       setError('Failed to load pending leaves.');
     } finally {
       setLoading(false);
@@ -49,9 +44,10 @@ const AdminDashboard = ({ user, onLogout }) => {
     setLoading(true);
     try {
       const response = await adminAPI.getAllLeaves();
-      setAllLeaves(response.data.leaves || []);
-      setFilteredLeaves(response.data.leaves || []);
-    } catch (err) {
+      const leaves = response.data.leaves || [];
+      setAllLeaves(leaves);
+      setFilteredLeaves(leaves);
+    } catch {
       setError('Failed to load all leaves.');
     } finally {
       setLoading(false);
@@ -59,48 +55,45 @@ const AdminDashboard = ({ user, onLogout }) => {
   };
 
   const applyFilters = useCallback(() => {
-  let filtered = [...allLeaves];
+    let filtered = [...allLeaves];
 
-  // Filter by department
-  if (reportFilters.department !== 'all') {
-    filtered = filtered.filter(
-      leave => leave.teacher?.department === reportFilters.department
-    );
-  }
+    if (reportFilters.department !== 'all') {
+      filtered = filtered.filter(
+        leave => leave.teacher?.department === reportFilters.department
+      );
+    }
 
-  // Filter by status
-  if (reportFilters.status !== 'all') {
-    filtered = filtered.filter(
-      leave => leave.status === reportFilters.status
-    );
-  }
+    if (reportFilters.status !== 'all') {
+      filtered = filtered.filter(
+        leave => leave.status === reportFilters.status
+      );
+    }
 
-  // Filter by date range
-  if (reportFilters.startDate && reportFilters.endDate) {
-    filtered = filtered.filter(leave => {
-      const leaveDate = new Date(leave.startDate);
-      const startDate = new Date(reportFilters.startDate);
-      const endDate = new Date(reportFilters.endDate);
-      endDate.setHours(23, 59, 59, 999);
-      return leaveDate >= startDate && leaveDate <= endDate;
-    });
-  }
+    if (reportFilters.startDate && reportFilters.endDate) {
+      filtered = filtered.filter(leave => {
+        const leaveDate = new Date(leave.startDate);
+        const startDate = new Date(reportFilters.startDate);
+        const endDate = new Date(reportFilters.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        return leaveDate >= startDate && leaveDate <= endDate;
+      });
+    }
 
-  setFilteredLeaves(filtered);
-}, [allLeaves, reportFilters]);
+    setFilteredLeaves(filtered);
+  }, [allLeaves, reportFilters]);
 
+  // ✅ ESLint-safe useEffect
+  useEffect(() => {
+    applyFilters();
+  }, [applyFilters]);
 
-  const handleTabChange = (tab) => {
+  const handleTabChange = tab => {
     setActiveTab(tab);
     setError('');
     setMessage('');
-    if (tab === 'all') {
-      fetchAllLeaves();
-    } else if (tab === 'reports') {
-      // Load all leaves for reporting
-      if (allLeaves.length === 0) {
-        fetchAllLeaves();
-      }
+
+    if (tab === 'all' || tab === 'reports') {
+      if (allLeaves.length === 0) fetchAllLeaves();
     } else {
       fetchPendingLeaves();
     }
@@ -113,21 +106,13 @@ const AdminDashboard = ({ user, onLogout }) => {
     }
 
     setLoading(true);
-    setError('');
-    setMessage('');
-
     try {
       await adminAPI.updateLeaveStatus(leaveId, status, reviewNotes);
-      setMessage(`Leave application ${status.toLowerCase()} successfully!`);
+      setMessage(`Leave ${status.toLowerCase()} successfully.`);
       setReviewNotes('');
       setSelectedLeave(null);
-      
-      // Refresh data
-      if (activeTab === 'pending') {
-        fetchPendingLeaves();
-      } else {
-        fetchAllLeaves();
-      }
+
+      activeTab === 'pending' ? fetchPendingLeaves() : fetchAllLeaves();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to update leave status.');
     } finally {
@@ -135,160 +120,14 @@ const AdminDashboard = ({ user, onLogout }) => {
     }
   };
 
-  // Generate CSV Report
-  const generateCSVReport = () => {
-    try {
-      setReportLoading(true);
-      setError('');
-      
-      if (filteredLeaves.length === 0) {
-        setError('No data to export. Please adjust your filters.');
-        setReportLoading(false);
-        return;
-      }
-      
-      const headers = ['Teacher Name', 'Teacher Email', 'Department', 'Leave Type', 'Start Date', 'End Date', 'Total Days', 'Status', 'Reason', 'Applied Date'];
-      
-      const csvRows = [
-        headers.join(','),
-        ...filteredLeaves.map(leave => {
-          // Clean and escape data for CSV
-          const escapeCSV = (str) => {
-            if (str === null || str === undefined) return '""';
-            const string = String(str);
-            if (string.includes(',') || string.includes('"') || string.includes('\n')) {
-              return `"${string.replace(/"/g, '""')}"`;
-            }
-            return string;
-          };
-          
-          return [
-            escapeCSV(leave.teacher?.name),
-            escapeCSV(leave.teacher?.email),
-            escapeCSV(leave.teacher?.department),
-            escapeCSV(leave.leaveType),
-            escapeCSV(formatDate(leave.startDate)),
-            escapeCSV(formatDate(leave.endDate)),
-            leave.totalDays,
-            escapeCSV(leave.status),
-            escapeCSV(leave.reason),
-            escapeCSV(formatDate(leave.appliedDate))
-          ].join(',');
+  const formatDate = date =>
+    date
+      ? new Date(date).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
         })
-      ];
-      
-      const csvString = csvRows.join('\n');
-      const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `leave-report-${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      setMessage(`CSV report exported successfully! Downloaded ${filteredLeaves.length} records.`);
-    } catch (err) {
-      setError('Failed to generate CSV report. Please try again.');
-      console.error('CSV error:', err);
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
-  // Generate Excel Report (using xlsx package)
-  const generateExcelReport = () => {
-    try {
-      setReportLoading(true);
-      setError('');
-      
-      if (filteredLeaves.length === 0) {
-        setError('No data to export. Please adjust your filters.');
-        setReportLoading(false);
-        return;
-      }
-      
-      // Check if XLSX is available
-      if (typeof XLSX === 'undefined') {
-        setError('Excel library not loaded. CSV export is available.');
-        setReportLoading(false);
-        return;
-      }
-      
-      // Prepare data for Excel
-      const excelData = filteredLeaves.map(leave => ({
-        'Teacher Name': leave.teacher?.name || 'N/A',
-        'Teacher Email': leave.teacher?.email || 'N/A',
-        'Department': leave.teacher?.department || 'N/A',
-        'Leave Type': leave.leaveType || 'N/A',
-        'Start Date': formatDate(leave.startDate),
-        'End Date': formatDate(leave.endDate),
-        'Total Days': leave.totalDays,
-        'Status': leave.status,
-        'Reason': leave.reason || 'N/A',
-        'Applied Date': formatDate(leave.appliedDate),
-        'Reviewed By': leave.reviewedBy?.name || 'N/A',
-        'Review Notes': leave.reviewNotes || 'N/A'
-      }));
-      
-      // Create worksheet
-      const worksheet = XLSX.utils.json_to_sheet(excelData);
-      
-      // Create workbook
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Leave Report');
-      
-      // Add summary sheet
-      const summaryData = [
-        ['Report Summary', ''],
-        ['Generated Date', new Date().toLocaleDateString()],
-        ['Total Records', filteredLeaves.length],
-        ['Pending', filteredLeaves.filter(l => l.status === 'Pending').length],
-        ['Approved', filteredLeaves.filter(l => l.status === 'Approved').length],
-        ['Rejected', filteredLeaves.filter(l => l.status === 'Rejected').length],
-        ['', ''],
-        ['Filters Applied', ''],
-        ['Department', reportFilters.department === 'all' ? 'All' : reportFilters.department],
-        ['Status', reportFilters.status === 'all' ? 'All' : reportFilters.status],
-        ['Date Range', reportFilters.startDate && reportFilters.endDate 
-          ? `${reportFilters.startDate} to ${reportFilters.endDate}` 
-          : 'All dates']
-      ];
-      
-      const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
-      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
-      
-      // Generate Excel file
-      XLSX.writeFile(workbook, `leave-report-${new Date().toISOString().split('T')[0]}.xlsx`);
-      
-      setMessage(`Excel report exported successfully! Downloaded ${filteredLeaves.length} records.`);
-    } catch (err) {
-      setError('Failed to generate Excel report. Using CSV instead.');
-      console.error('Excel error:', err);
-      // Fallback to CSV
-      generateCSVReport();
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
-  // Generate PDF Report (with fallback to CSV)
-  const generatePDFReport = () => {
-    setMessage('PDF export requires jspdf package. Using Excel export instead.');
-    // Fallback to Excel
-    generateExcelReport();
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+      : 'N/A';
 
   const getStatusColor = (status) => {
     switch (status) {

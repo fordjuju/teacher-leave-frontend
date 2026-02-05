@@ -15,11 +15,10 @@ const Login = ({ onLoginSuccess }) => {
     try {
       const response = await authAPI.login({ email, password });
       const { token, teacher } = response.data;
-      
-      // Save token and user data
+
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(teacher));
-      
+
       alert('Login successful!');
       if (onLoginSuccess) onLoginSuccess(teacher);
     } catch (err) {
@@ -33,7 +32,9 @@ const Login = ({ onLoginSuccess }) => {
     <div style={styles.container}>
       <div style={styles.card}>
         <h2 style={styles.title}>Staff Login</h2>
+
         {error && <div style={styles.error}>{error}</div>}
+
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
             <label style={styles.label}>Email</label>
@@ -47,6 +48,7 @@ const Login = ({ onLoginSuccess }) => {
               disabled={loading}
             />
           </div>
+
           <div style={styles.inputGroup}>
             <label style={styles.label}>Password</label>
             <input
@@ -59,16 +61,15 @@ const Login = ({ onLoginSuccess }) => {
               disabled={loading}
             />
           </div>
-          <button 
-            type="submit" 
-            style={styles.button}
-            disabled={loading}
-          >
+
+          <button type="submit" style={styles.button} disabled={loading}>
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
+
         <p style={styles.registerText}>
-          Don't have an account? <a href="#" onClick={() => window.location.href = '/register'}>Register here</a>
+          Don&apos;t have an account?{' '}
+          <a href="/register">Register here</a>
         </p>
       </div>
     </div>
@@ -133,8 +134,6 @@ const styles = {
     fontSize: '1rem',
     fontWeight: 'bold',
     cursor: 'pointer',
-    opacity: 1,
-    transition: 'opacity 0.3s',
   },
   registerText: {
     textAlign: 'center',
