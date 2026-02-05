@@ -1,0 +1,547 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { leaveAPI } from '../services/api';
+import StatisticsCard from '../components/statistics/StatisticsCard';
+import LeaveChart from '../components/statistics/LeaveChart';
+import MonthlyChart from '../components/statistics/MonthlyChart';
+
+// Simplified leave types
+const LEAVE_TYPES = [
+  { value: 'SICK', label: 'Sick Leave', maxDays: 7, requiresDocumentation: false },
+  { value: 'VACATION', label: 'Vacation', maxDays: 30, requiresDocumentation: false },
+  { value: 'PERSONAL', label: 'Personal Leave', maxDays: 5, requiresDocumentation: false },
+  { value: 'MATERNITY', label: 'Maternity Leave', maxDays: 90, requiresDocumentation: true },
+  { value: 'PATERNITY', label: 'Paternity Leave', maxDays: 14, requiresDocumentation: true },
+  { value: 'STUDY', label: 'Study Leave', maxDays: 30, requiresDocumentation: true }
+];
+
+const Dashboard = ({ user, onLogout }) => {
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [showLeavesList, setShowLeavesList] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({
+    leaveType: '',
+    startDate: '',
+    endDate: '',
+    totalDays: 1,
+    reason: '',
+    documentation: null
+  });
+  const [leaves, setLeaves] = useState([]);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loadingLeaves, setLoadingLeaves] = useState(false);
+  const [stats, setStats] = useState({
+    totalLeaves: 0,
+    approvedLeaves: 0,
+    pendingLeaves: 0,
+    rejectedLeaves: 0,
+    usedDays: 0,
+    remainingDays: user?.leaveBalance || 20,
+  });
+
+  useEffect(() => {
+    fetchLeaves();
+  }, []);
+
+  const calculateStatistics = useCallback(() => {
+    const totalLeaves = leaves.length;
+    const approvedLeaves = leaves.filter(l => l.status === 'Approved').length;
+    const pendingLeaves = leaves.filter(l => l.status === 'Pending').length;
+    const rejectedLeaves = leaves.filter(l => l.status === 'Rejected').length;
+    
+    const usedDays = leaves
+      .filter(l => l.status === 'Approved')
+      .reduce((sum, leave) => sum + leave.totalDays, 0);
+    
+    const remainingDays = (user?.leaveBalance || 20) - usedDays;
+
+    setStats({
+      totalLeaves,
+      approvedLeaves,
+      pendingLeaves,
+      rejectedLeaves,
+      usedDays,
+      remainingDays: Math.max(0, remainingDays),
+    });
+  }, [leaves, user?.leaveBalance]);
+
+  useEffect(() => {
+    if (leaves.length > 0) {
+      calculateStatistics();
+    }
+  }, [leaves, calculateStatistics]);
+
+  const fetchLeaves = async () => {
+    setLoadingLeaves(true);
+    try {
+      const response = await leaveAPI.getMyLeaves();
+      setLeaves(response.data.leaves || []);
+    } catch (err) {
+      setError('Failed to load leave applications.');
+    } finally {
+      setLoadingLeaves(false);
+    }
+  };
+
+  const handleApplyLeave = async (e) => {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+
+    // Validation
+    if (!leaveForm.leaveType || !leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason) {
+      setError('Please fill all required fields.');
+      return;
+    }
+
+    const selectedType = LEAVE_TYPES.find(t => t.value === leaveForm.leaveType);
+    if (!selectedType) {
+      setError('Invalid leave type.');
+      return;
+    }
+
+    if (leaveForm.totalDays > selectedType.maxDays) {
+      setError(`Maximum days for ${selectedType.label} is ${selectedType.maxDays}.`);
+      return;
+    }
+
+    if (leaveForm.totalDays > stats.remainingDays) {
+      setError(`You only have ${stats.remainingDays} days remaining.`);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Create FormData for potential file upload
+      const formData = new FormData();
+      formData.append('leaveType', leaveForm.leaveType);
+      formData.append('startDate', leaveForm.startDate);
+      formData.append('endDate', leaveForm.endDate);
+      formData.append('totalDays', leaveForm.totalDays.toString());
+      formData.append('reason', leaveForm.reason);
+      
+      if (leaveForm.documentation) {
+        formData.append('documentation', leaveForm.documentation);
+      }
+
+      console.log('Submitting leave data...');
+      const response = await leaveAPI.applyLeave(formData);
+      console.log('Response:', response.data);
+      
+      setMessage('Leave application submitted successfully!');
+      setLeaveForm({
+        leaveType: '',
+        startDate: '',
+        endDate: '',
+        totalDays: 1,
+        reason: '',
+        documentation: null
+      });
+      setShowLeaveForm(false);
+      fetchLeaves();
+      
+    } catch (err) {
+      console.error('Submission error:', err);
+      console.error('Error response:', err.response?.data);
+      
+      let errorMsg = 'Failed to submit leave application. ';
+      if (err.response?.data?.error) {
+        errorMsg += err.response.data.error;
+      } else if (err.response?.data?.message) {
+        errorMsg += err.response.data.message;
+      } else if (err.message) {
+        errorMsg += err.message;
+      }
+      
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Approved': return '#059669';
+      case 'Rejected': return '#dc2626';
+      default: return '#d97706';
+    }
+  };
+
+  const getTomorrowDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  };
+
+  const calculateEndDate = (startDate, days) => {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + days - 1);
+    return date.toISOString().split('T')[0];
+  };
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h1 style={styles.title}>Teacher Dashboard</h1>
+        <button onClick={onLogout} style={styles.logoutButton}>
+          Logout
+        </button>
+      </div>
+      
+      <div style={styles.welcome}>
+        <h2>Welcome, {user?.name}!</h2>
+        <p>Email: {user?.email} • Department: {user?.department}</p>
+        <div style={styles.leaveBalance}>
+          <span style={styles.balanceLabel}>Leave Balance:</span>
+          <span style={styles.balanceValue}>{stats.remainingDays} days</span>
+        </div>
+      </div>
+
+      {message && <div style={styles.successMessage}>{message}</div>}
+      {error && <div style={styles.errorMessage}>{error}</div>}
+
+      {/* Quick Actions */}
+      <div style={styles.section}>
+        <div style={styles.actions}>
+          <button 
+            onClick={() => {
+              setShowLeaveForm(!showLeaveForm);
+              setShowLeavesList(false);
+              setError('');
+              setMessage('');
+            }} 
+            style={styles.actionButton}
+          >
+            {showLeaveForm ? 'Cancel' : 'Apply for Leave'}
+          </button>
+          <button 
+            onClick={() => {
+              setShowLeavesList(!showLeavesList);
+              setShowLeaveForm(false);
+              setError('');
+              setMessage('');
+            }}
+            style={styles.actionButton}
+          >
+            {showLeavesList ? 'Hide Leaves' : 'View My Leaves'}
+          </button>
+        </div>
+      </div>
+
+      {showLeaveForm && (
+        <div style={styles.leaveFormSection}>
+          <h3>Apply for Leave</h3>
+          <form onSubmit={handleApplyLeave}>
+            {/* Leave Type */}
+            <div style={styles.formGroup}>
+              <label>Leave Type *</label>
+              <select
+                value={leaveForm.leaveType}
+                onChange={(e) => setLeaveForm({...leaveForm, leaveType: e.target.value})}
+                style={styles.select}
+                required
+              >
+                <option value="">Select Type</option>
+                {LEAVE_TYPES.map(type => (
+                  <option key={type.value} value={type.value}>
+                    {type.label} (Max: {type.maxDays} days)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Dates */}
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label>Start Date *</label>
+                <input
+                  type="date"
+                  value={leaveForm.startDate}
+                  onChange={(e) => {
+                    const start = e.target.value;
+                    setLeaveForm({
+                      ...leaveForm, 
+                      startDate: start,
+                      endDate: leaveForm.endDate && new Date(leaveForm.endDate) < new Date(start) ? '' : leaveForm.endDate
+                    });
+                  }}
+                  min={getTomorrowDate()}
+                  style={styles.input}
+                  required
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label>End Date *</label>
+                <input
+                  type="date"
+                  value={leaveForm.endDate}
+                  onChange={(e) => {
+                    const end = e.target.value;
+                    setLeaveForm({
+                      ...leaveForm, 
+                      endDate: end
+                    });
+                    if (leaveForm.startDate) {
+                      const start = new Date(leaveForm.startDate);
+                      const endDate = new Date(end);
+                      if (endDate >= start) {
+                        const diffDays = Math.ceil((endDate - start) / (1000 * 60 * 60 * 24)) + 1;
+                        setLeaveForm(prev => ({ ...prev, totalDays: diffDays }));
+                      }
+                    }
+                  }}
+                  min={leaveForm.startDate || getTomorrowDate()}
+                  style={styles.input}
+                  required
+                  disabled={!leaveForm.startDate}
+                />
+              </div>
+            </div>
+
+            {/* Days */}
+            <div style={styles.formGroup}>
+              <label>Total Days</label>
+              <input
+                type="number"
+                value={leaveForm.totalDays}
+                onChange={(e) => {
+                  const days = parseInt(e.target.value) || 1;
+                  const selectedType = LEAVE_TYPES.find(t => t.value === leaveForm.leaveType);
+                  const maxDays = selectedType?.maxDays || stats.remainingDays;
+                  const cappedDays = Math.min(days, maxDays);
+                  setLeaveForm({
+                    ...leaveForm,
+                    totalDays: cappedDays,
+                    endDate: leaveForm.startDate ? calculateEndDate(leaveForm.startDate, cappedDays) : ''
+                  });
+                }}
+                min="1"
+                max={stats.remainingDays}
+                style={styles.input}
+              />
+              <small style={styles.helpText}>
+                Max available: {stats.remainingDays} days
+              </small>
+            </div>
+
+            {/* Reason */}
+            <div style={styles.formGroup}>
+              <label>Reason *</label>
+              <textarea
+                value={leaveForm.reason}
+                onChange={(e) => setLeaveForm({...leaveForm, reason: e.target.value})}
+                style={styles.textarea}
+                placeholder="Please provide a reason..."
+                rows="3"
+                required
+              />
+            </div>
+
+            {/* Submit */}
+            <button 
+              type="submit" 
+              style={styles.submitButton}
+              disabled={loading}
+            >
+              {loading ? 'Submitting...' : 'Submit Leave Application'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {showLeavesList && (
+        <div style={styles.leavesSection}>
+          <h3>My Leave Applications ({leaves.length})</h3>
+          {loadingLeaves ? (
+            <p>Loading...</p>
+          ) : leaves.length === 0 ? (
+            <p>No applications yet.</p>
+          ) : (
+            <div style={styles.leavesTable}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Leave Type</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Days</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaves.map((leave) => (
+                    <tr key={leave._id}>
+                      <td>{leave.leaveType}</td>
+                      <td>{formatDate(leave.startDate)}</td>
+                      <td>{formatDate(leave.endDate)}</td>
+                      <td>{leave.totalDays}</td>
+                      <td>{leave.reason}</td>
+                      <td style={{ color: getStatusColor(leave.status) }}>
+                        {leave.status}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const styles = {
+  container: {
+    padding: '2rem',
+    maxWidth: '1200px',
+    margin: '0 auto',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '2rem',
+  },
+  title: {
+    color: '#2563eb',
+  },
+  logoutButton: {
+    backgroundColor: '#dc2626',
+    color: 'white',
+    padding: '0.5rem 1rem',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  welcome: {
+    backgroundColor: '#f3f4f6',
+    padding: '1.5rem',
+    borderRadius: '8px',
+    marginBottom: '2rem',
+  },
+  leaveBalance: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    marginTop: '1rem',
+  },
+  balanceLabel: {
+    fontWeight: 'bold',
+  },
+  balanceValue: {
+    fontSize: '1.2rem',
+    fontWeight: 'bold',
+    color: '#2563eb',
+  },
+  section: {
+    marginBottom: '2rem',
+  },
+  actions: {
+    display: 'flex',
+    gap: '1rem',
+  },
+  actionButton: {
+    backgroundColor: '#2563eb',
+    color: 'white',
+    padding: '0.75rem 1.5rem',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  successMessage: {
+    backgroundColor: '#d1fae5',
+    color: '#059669',
+    padding: '0.75rem',
+    borderRadius: '4px',
+    marginBottom: '1rem',
+  },
+  errorMessage: {
+    backgroundColor: '#fee2e2',
+    color: '#dc2626',
+    padding: '0.75rem',
+    borderRadius: '4px',
+    marginBottom: '1rem',
+  },
+  leaveFormSection: {
+    backgroundColor: '#f8fafc',
+    padding: '1.5rem',
+    borderRadius: '8px',
+    marginBottom: '2rem',
+  },
+  formGroup: {
+    marginBottom: '1rem',
+  },
+  formRow: {
+    display: 'flex',
+    gap: '1rem',
+  },
+  input: {
+    width: '100%',
+    padding: '0.5rem',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+  },
+  select: {
+    width: '100%',
+    padding: '0.5rem',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+  },
+  textarea: {
+    width: '100%',
+    padding: '0.5rem',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    fontFamily: 'inherit',
+  },
+  submitButton: {
+    backgroundColor: '#059669',
+    color: 'white',
+    padding: '0.75rem 1.5rem',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  helpText: {
+    color: '#666',
+    fontSize: '0.8rem',
+    display: 'block',
+    marginTop: '0.25rem',
+  },
+  leavesSection: {
+    backgroundColor: '#f8fafc',
+    padding: '1.5rem',
+    borderRadius: '8px',
+  },
+  leavesTable: {
+    overflowX: 'auto',
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+  },
+  tableTh: {
+    backgroundColor: '#eee',
+    padding: '0.5rem',
+    textAlign: 'left',
+  },
+  tableTd: {
+    padding: '0.5rem',
+    borderBottom: '1px solid #ddd',
+  },
+};
+
+export default Dashboard;
