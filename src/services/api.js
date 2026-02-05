@@ -3,6 +3,7 @@ import axios from 'axios';
 const API_BASE_URL = 'https://teacher-leave-backend.onrender.com/api';
 
 
+
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { adminAPI } from '../services/api';
 
 const AdminDashboard = ({ user, onLogout }) => {
@@ -58,34 +58,37 @@ const AdminDashboard = ({ user, onLogout }) => {
     }
   };
 
-  const applyFilters = () => {
-    let filtered = [...allLeaves];
-    
-    // Filter by department
-    if (reportFilters.department !== 'all') {
-      filtered = filtered.filter(leave => 
-        leave.teacher?.department === reportFilters.department
-      );
-    }
-    
-    // Filter by status
-    if (reportFilters.status !== 'all') {
-      filtered = filtered.filter(leave => leave.status === reportFilters.status);
-    }
-    
-    // Filter by date range
-    if (reportFilters.startDate && reportFilters.endDate) {
-      filtered = filtered.filter(leave => {
-        const leaveDate = new Date(leave.startDate);
-        const startDate = new Date(reportFilters.startDate);
-        const endDate = new Date(reportFilters.endDate);
-        endDate.setHours(23, 59, 59, 999); // Include entire end day
-        return leaveDate >= startDate && leaveDate <= endDate;
-      });
-    }
-    
-    setFilteredLeaves(filtered);
-  };
+  const applyFilters = useCallback(() => {
+  let filtered = [...allLeaves];
+
+  // Filter by department
+  if (reportFilters.department !== 'all') {
+    filtered = filtered.filter(
+      leave => leave.teacher?.department === reportFilters.department
+    );
+  }
+
+  // Filter by status
+  if (reportFilters.status !== 'all') {
+    filtered = filtered.filter(
+      leave => leave.status === reportFilters.status
+    );
+  }
+
+  // Filter by date range
+  if (reportFilters.startDate && reportFilters.endDate) {
+    filtered = filtered.filter(leave => {
+      const leaveDate = new Date(leave.startDate);
+      const startDate = new Date(reportFilters.startDate);
+      const endDate = new Date(reportFilters.endDate);
+      endDate.setHours(23, 59, 59, 999);
+      return leaveDate >= startDate && leaveDate <= endDate;
+    });
+  }
+
+  setFilteredLeaves(filtered);
+}, [allLeaves, reportFilters]);
+
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
