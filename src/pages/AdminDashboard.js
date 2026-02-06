@@ -1,5 +1,40 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { adminAPI } from '../services/api';
+// ================= REPORT GENERATORS =================
+
+const generateCSVReport = (rows) => {
+  if (!rows || rows.length === 0) {
+    alert('No data to export');
+    return;
+  }
+
+  const headers = Object.keys(rows[0]).join(',');
+  const data = rows.map(row => Object.values(row).join(','));
+  const csvContent = [headers, ...data].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'leave-report.csv';
+  link.click();
+
+  URL.revokeObjectURL(url);
+};
+
+const generateExcelReport = (rows) => {
+  // Simple fallback for now
+  // Later you can replace this with SheetJS (xlsx)
+  generateCSVReport(rows);
+};
+
+const generatePDFReport = () => {
+  // Simple fallback
+  // Later you can integrate jsPDF
+  window.print();
+};
+
 
 const AdminDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('pending');
