@@ -550,7 +550,7 @@ const AdminDashboard = ({ user, onLogout }) => {
 };
 
 // Add this line at the very end, before export
-const XLSX = window.XLSX;
+
 
 const styles = {
   // ... [ALL YOUR EXISTING STYLES REMAIN EXACTLY THE SAME] ...
