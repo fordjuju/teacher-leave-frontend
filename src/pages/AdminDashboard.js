@@ -55,7 +55,8 @@ const AdminDashboard = ({ user, onLogout }) => {
 
   const [filteredLeaves, setFilteredLeaves] = useState([]);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [reportLoading, setReportLoading] = useState(false);
+ const [reportLoading] = useState(false);
+
 
   useEffect(() => {
     if (user?.role === 'admin') {
